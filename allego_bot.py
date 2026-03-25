@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup
 import time
 import threading
 import os
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -44,6 +45,15 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 ALLEGO_URL         = "https://www.allego.eu/charging-station/wankelstrasse-3-ingolstadt/"
 INTERVALLO_SECONDI = 60   # frequenza di controllo della pagina
+
+try:
+    _ts = subprocess.check_output(
+        ["git", "log", "-1", "--format=%cd", "--date=format:%Y%m%d_%H%M"],
+        cwd=Path(__file__).parent, stderr=subprocess.DEVNULL
+    ).decode().strip()
+    VERSION = _ts if _ts else "unknown"
+except Exception:
+    VERSION = "unknown"
 # ─────────────────────────────────────────────
 
 HEADERS = {
@@ -245,13 +255,14 @@ def main():
 
     print("=" * 50)
     print("  Allego Monitor — Bot Telegram")
+    print(f"  Versione: {VERSION}")
     print(f"  Intervallo controllo: {INTERVALLO_SECONDI}s")
     print("  In attesa di comandi da Telegram...")
     print("=" * 50)
 
     # Informa l'utente che il servizio è partito
     telegram_send(
-        "🤖 *Allego Monitor online!*\n\n"
+        f"🤖 *Allego Monitor online!*  `v{VERSION}`\n\n"
         "Comandi disponibili:\n"
         "/start — avvia il monitoraggio\n"
         "/stop  — ferma il monitoraggio\n"
