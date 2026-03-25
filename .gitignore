@@ -1,0 +1,11 @@
+# Credenziali
+.env
+
+# Virtual environment
+AllegoMonitor/
+
+# File temporanei/debug
+*.html
+
+# macOS
+.DS_Store
