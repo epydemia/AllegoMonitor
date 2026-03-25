@@ -14,7 +14,6 @@ Configurazione:
 """
 
 import requests
-from bs4 import BeautifulSoup
 import time
 import threading
 import os
@@ -44,6 +43,8 @@ TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 ALLEGO_URL         = "https://www.allego.eu/charging-station/wankelstrasse-3-ingolstadt/"
+ALLEGO_STATION_ID  = 10944184
+ALLEGO_API_URL     = "https://www.allego.eu/wp-content/themes/happyhorizon/functions/ajax_station.php"
 INTERVALLO_SECONDI = 60   # frequenza di controllo della pagina
 
 try:
@@ -85,30 +86,20 @@ ultimo_update_id = 0
 # ──────────────────────────────────────────────────────
 
 def fetch_charger_status() -> dict[str, str]:
-    """Scraping diretto della pagina Allego: legge ID e State da ogni div.plug."""
-    r = requests.get(ALLEGO_URL, headers=HEADERS, timeout=15)
+    """Chiama l'API interna Allego e restituisce {label: 'free/all'} per ogni tipo di connettore attivo."""
+    r = requests.get(ALLEGO_API_URL, params={"station_id": ALLEGO_STATION_ID}, headers=HEADERS, timeout=15)
     r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
+    data = r.json()
 
     chargers = {}
-    for plug in soup.select("div.plug"):
-        evse_id = None
-        state = None
-        for prop in plug.select("div.prop"):
-            label = prop.find("strong")
-            value = prop.find("span")
-            if not label or not value:
-                continue
-            label_text = label.get_text(strip=True).rstrip(":")
-            if label_text == "ID":
-                evse_id = value.get_text(strip=True)
-            elif label_text == "State":
-                state = value.get_text(strip=True)
-        if evse_id and state:
-            chargers[evse_id] = state
+    for item in data.get("items", {}).values():
+        if item.get("all", 0) == 0:
+            continue
+        label = f"{item['label']} {item['speed']}kW"
+        chargers[label] = f"{item['free']}/{item['all']}"
 
     if not chargers:
-        raise ValueError("Nessuna colonnina trovata nella pagina Allego")
+        raise ValueError("Nessuna colonnina trovata nella risposta API Allego")
     return chargers
 
 
@@ -232,9 +223,10 @@ def gestisci_comando(testo: str):
         try:
             chargers = fetch_charger_status()
             righe = ["📍 *Stato attuale colonnine:*"]
-            for cid, state in chargers.items():
-                emoji = "🟢" if state == "Available" else "🔴" if state == "Occupied" else "⚪"
-                righe.append(f"{emoji} `{cid}`: {state}")
+            for label, state in chargers.items():
+                free, total = map(int, state.split("/"))
+                emoji = "🟢" if free == total else "🔴" if free == 0 else "🟡"
+                righe.append(f"{emoji} {label}: *{state}* libere")
             mon = "▶️ attivo" if monitoraggio_attivo else "⏹ fermo"
             righe.append(f"\n_Monitoraggio: {mon}_")
             telegram_send("\n".join(righe))
