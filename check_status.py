@@ -26,6 +26,19 @@ def main():
         print(json.dumps(fetch_raw(), indent=2, ensure_ascii=False))
         return
 
+    if "--debug" in sys.argv:
+        data = fetch_raw()
+        items = data.get("items", {})
+        print(f"\n[DEBUG] Chiavi top-level: {list(data.keys())}")
+        print(f"[DEBUG] Numero di items: {len(items)}")
+        for key, item in items.items():
+            print(f"\n  item[{key!r}]:")
+            for k, v in item.items():
+                print(f"    {k}: {v!r}")
+            all_ = item.get("all", 0)
+            print(f"    --> {'INCLUSA' if all_ != 0 else 'SCARTATA (all == 0)'}")
+        return
+
     ora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"\n{'='*45}")
     print(f"  Stato colonnine Allego — {ora}")
