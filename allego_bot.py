@@ -13,6 +13,7 @@ Configurazione:
     Modifica le variabili nella sezione CONFIG qui sotto.
 """
 
+import re
 import requests
 import time
 import threading
@@ -20,6 +21,7 @@ import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from bs4 import BeautifulSoup
 
 
 # ─────────────────────────────────────────────
@@ -43,8 +45,6 @@ TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 ALLEGO_URL         = "https://www.allego.eu/charging-station/wankelstrasse-3-ingolstadt/"
-ALLEGO_STATION_ID  = 10944184
-ALLEGO_API_URL     = "https://www.allego.eu/wp-content/themes/happyhorizon/functions/ajax_station.php"
 INTERVALLO_SECONDI = 60   # frequenza di controllo della pagina
 
 try:
@@ -86,21 +86,47 @@ ultimo_update_id = 0
 # ──────────────────────────────────────────────────────
 
 def fetch_charger_status() -> dict[str, str]:
-    """Chiama l'API interna Allego e restituisce {label: 'free/all'} per ogni tipo di connettore attivo."""
-    r = requests.get(ALLEGO_API_URL, params={"station_id": ALLEGO_STATION_ID}, headers=HEADERS, timeout=15)
+    """Scrape la pagina Allego e restituisce {label: 'free/all'} per ogni tipo di connettore."""
+    r = requests.get(ALLEGO_URL, headers=HEADERS, timeout=15)
     r.raise_for_status()
-    data = r.json()
+    soup = BeautifulSoup(r.text, "html.parser")
 
-    chargers = {}
-    for item in data.get("items", {}).values():
-        if item.get("all", 0) == 0:
-            continue
-        label = f"{item['label']} {item['speed']}kW"
-        chargers[label] = f"{item['free']}/{item['all']}"
+    plugs = soup.find_all("div", class_="plug")
+    if not plugs:
+        raise ValueError("Nessuna colonnina trovata nella pagina Allego")
 
-    if not chargers:
-        raise ValueError("Nessuna colonnina trovata nella risposta API Allego")
-    return chargers
+    groups: dict[str, dict] = {}
+
+    for plug in plugs:
+        # Velocità (es. div.speed-number contiene "11")
+        speed_el = plug.find("div", class_="speed-number")
+        speed = speed_el.get_text(strip=True) if speed_el else "?"
+
+        # Tipo connettore dal nome file dell'icona (plug-type-2.svg → "Type 2")
+        icon_img = plug.find("img", attrs={"data-src": True})
+        conn_type = "AC"
+        if icon_img:
+            m = re.search(r"plug-type-(\w+)\.svg", icon_img["data-src"])
+            if m:
+                conn_type = f"Type {m.group(1)}"
+
+        # Stato del connettore
+        state = "Unknown"
+        for prop in plug.find_all("div", class_="prop"):
+            strong = prop.find("strong")
+            span = prop.find("span")
+            if strong and span and "State" in strong.get_text():
+                state = span.get_text(strip=True)
+                break
+
+        label = f"{conn_type} {speed}kW"
+        if label not in groups:
+            groups[label] = {"free": 0, "total": 0}
+        groups[label]["total"] += 1
+        if state.lower() == "available":
+            groups[label]["free"] += 1
+
+    return {label: f"{g['free']}/{g['total']}" for label, g in groups.items()}
 
 
 # ──────────────────────────────────────────────────────
