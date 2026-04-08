@@ -5,13 +5,16 @@ Usa fetch_charger_status() da allego_bot.py per debuggare il bot.
 Uso:
     python check_status.py           # output normale
     python check_status.py --raw     # stampa la risposta grezza dell'API
+    python check_status.py --debug   # mostra il parsing degli items API
+    python check_status.py --html    # mostra i div outletDetail dalla pagina HTML
 """
 
 import sys
 import json
 import requests
 from datetime import datetime
-from allego_bot import fetch_charger_status, ALLEGO_API_URL, ALLEGO_STATION_ID, HEADERS
+from bs4 import BeautifulSoup
+from allego_bot import fetch_charger_status, ALLEGO_API_URL, ALLEGO_STATION_ID, ALLEGO_URL, HEADERS
 
 
 def fetch_raw() -> dict:
@@ -24,6 +27,21 @@ def main():
     if "--raw" in sys.argv:
         print("\n[DEBUG] Risposta grezza API Allego:")
         print(json.dumps(fetch_raw(), indent=2, ensure_ascii=False))
+        return
+
+    if "--html" in sys.argv:
+        r = requests.get(ALLEGO_URL, headers=HEADERS, timeout=15)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        grid = soup.find(class_="ui-grid-c")
+        if not grid:
+            print("[DEBUG] div.ui-grid-c non trovato nella pagina")
+            return
+        outlets = grid.find_all(class_="outletDetail")
+        print(f"\n[DEBUG] Trovati {len(outlets)} div.outletDetail\n")
+        for i, outlet in enumerate(outlets):
+            print(f"--- outletDetail #{i+1} ---")
+            print(outlet.prettify())
         return
 
     if "--debug" in sys.argv:
